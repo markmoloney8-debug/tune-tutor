@@ -69,13 +69,16 @@ body { background: var(--paper); color: var(--ink); font-family: var(--f-body); 
 .hint { margin: 0; color: var(--muted); font-size: .9rem; max-width: 62ch; }
 .row { display: flex; flex-wrap: wrap; gap: 10px; }
 
-.sheet { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding-block: 16px 14px; display: grid; gap: 4px; min-width: 0; }
+.sheet { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding-block: 16px 14px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; }
 .sheet-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-inline: 16px; }
 .sheet-head > div { min-width: 0; }
 .sheet h2 { font-family: var(--f-display); font-weight: 400; font-size: 1.7rem; line-height: 1.1; margin: 0; text-wrap: balance; overflow-wrap: anywhere; }
 .sheet .by { color: var(--muted); font-size: .85rem; }
 .progress { font-family: var(--f-mono); font-size: .85rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.staff-scroll { overflow-x: auto; padding-inline: 8px; scrollbar-width: thin; }
+.staff-scroll { overflow-x: auto; padding-inline: 8px; scrollbar-width: thin; min-width: 0; }
+.staff-bar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; font-size: .92rem; color: var(--muted); }
+.staff-bar label { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
+.staff-bar select { font: inherit; font-weight: 400; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: .35rem .5rem; max-width: 100%; }
 #staff { display: block; }
 .prompt { margin: 0; padding-inline: 16px; font-size: .95rem; }
 
@@ -216,6 +219,26 @@ body { background: var(--paper); color: var(--ink); font-family: var(--f-body); 
     <p class="hint" id="libHint">Upload a .musicxml or .mxl file. You can export one from MuseScore (free), Sibelius, Finale or Dorico, or download one from MuseScore.com. Scanner apps like PlayScore 2 can turn a photo of sheet music into MusicXML. The first part and the top line are used, and transposing parts like clarinet or trumpet are checked at the right pitch.</p>
   </section>
 
+  <div class="staff-bar">
+    <label>Clef
+      <select id="clefSel">
+        <option value="treble">Treble</option>
+        <option value="bass">Bass</option>
+        <option value="alto">Alto (viola)</option>
+        <option value="tenor">Tenor</option>
+      </select>
+    </label>
+    <label>Octave
+      <select id="shiftSel">
+        <option value="-2">2 lower</option>
+        <option value="-1">1 lower</option>
+        <option value="0" selected>As written</option>
+        <option value="1">1 higher</option>
+        <option value="2">2 higher</option>
+      </select>
+    </label>
+  </div>
+
   <section class="sheet" aria-label="Sheet music">
     <div class="sheet-head">
       <div><h2 id="pieceName"></h2><div class="by" id="pieceBy"></div></div>
@@ -240,23 +263,6 @@ body { background: var(--paper); color: var(--ink); font-family: var(--f-body); 
   </section>
 
   <div class="settings">
-    <label>Clef
-      <select id="clefSel">
-        <option value="treble">Treble</option>
-        <option value="bass">Bass</option>
-        <option value="alto">Alto (viola)</option>
-        <option value="tenor">Tenor</option>
-      </select>
-    </label>
-    <label>Octave
-      <select id="shiftSel">
-        <option value="-2">2 lower</option>
-        <option value="-1">1 lower</option>
-        <option value="0" selected>As written</option>
-        <option value="1">1 higher</option>
-        <option value="2">2 higher</option>
-      </select>
-    </label>
     <label>In tune within
       <select id="tolSel">
         <option value="10">±10 cents (strict)</option>
@@ -612,12 +618,17 @@ body { background: var(--paper); color: var(--ink); font-family: var(--f-body); 
   }
 
   function noteEl(i) { return $('n' + i); }
+  function scrollToNote(i) {
+    const sc = $('staffScroll'), n = notes[i]; if (!n) return;
+    const left = Math.max(0, n.x + 8 - sc.clientWidth * 0.4);
+    const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    sc.scrollTo({ left, behavior: reduce ? 'auto' : 'smooth' });
+  }
   function setTarget(i) {
     document.querySelectorAll('.note.target').forEach(e => e.classList.remove('target'));
     const el = noteEl(i); if (!el) return;
     el.classList.add('target');
-    const sc = $('staffScroll');
-    sc.scrollTo({ left: Math.max(0, notes[i].x - sc.clientWidth / 2), behavior: 'smooth' });
+    scrollToNote(i);
     $('progress').textContent = `${i} / ${notes.length}`;
     $('prompt').innerHTML = `Next note: <strong>${label(notes[i])}</strong>`;
   }
@@ -773,7 +784,11 @@ body { background: var(--paper); color: var(--ink); font-family: var(--f-body); 
     meter(m, c);
     onPitch(m, c, rms, now);
   }
-  function begin(newMode) { mode = newMode; cancelAnimationFrame(raf); raf = requestAnimationFrame(tick); updateButtons(); }
+  function keepStaffInView() {
+    const r = document.querySelector('.sheet').getBoundingClientRect();
+    if (r.top < 0 || r.bottom > window.innerHeight) document.querySelector('.staff-bar').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+  function begin(newMode) { mode = newMode; keepStaffInView(); cancelAnimationFrame(raf); raf = requestAnimationFrame(tick); updateButtons(); }
   function stopAll() {
     cancelAnimationFrame(raf); raf = 0;
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
@@ -860,11 +875,12 @@ body { background: var(--paper); color: var(--ink); font-family: var(--f-body); 
       const len = Math.max(0.12, beat * n.dur);
       tone(snd(n), 0, t, len - 0.04, [out], 0.5);
       const on = (t - startT + 0.15) * 1000, off = on + (len - 0.04) * 1000;
-      hearTimers.push(setTimeout(() => noteEl(i) && noteEl(i).classList.add('playing'), on));
+      hearTimers.push(setTimeout(() => { if (noteEl(i)) { noteEl(i).classList.add('playing'); scrollToNote(i); } }, on));
       hearTimers.push(setTimeout(() => noteEl(i) && noteEl(i).classList.remove('playing'), off));
       t += len;
     });
-    hearTimers.push(setTimeout(stopHear, (t - startT + 0.3) * 1000));
+    hearTimers.push(setTimeout(() => { stopHear(); scrollToNote(run.idx); }, (t - startT + 0.3) * 1000));
+    keepStaffInView();
   });
 
   $('fileIn').addEventListener('change', async e => {
